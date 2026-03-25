@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <title>Optical Lab</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
+        #controls {
+            position: absolute; top: 20px; left: 20px;
+            background: rgba(10, 10, 15, 0.85); padding: 18px;
+            border-radius: 12px; border: 1px solid #00ffcc; color: white; width: 260px;
+            z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+        }
+        input[type=range] { width: 100%; accent-color: #00ffcc; cursor: pointer; }
+        .val { float: right; color: #00ffcc; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="controls">
+    <h3 style="margin:0 0 10px 0; font-size: 16px; color: #00ffcc;">অপটিক্যাল ল্যাব ৩ডি</h3>
+    <hr style="border: 0.5px solid #333; margin: 10px 0;">
+    <div>
+        <label>বস্তুর দূরত্ব (u): <span id="u-val" class="val">-8.0</span></label>
+        <input type="range" id="u-slider" min="-18" max="-1" step="0.1" value="-8">
+    </div>
+    <div style="margin-bottom:12px;">
+        <label>ফোকাস দূরত্ব (f): <span id="f-val" class="val">4.0</span></label>
+        <input type="range" id="f-slider" min="2" max="8" step="0.1" value="4">
+    </div>
+    <div style="font-size: 13px; color: #bbb; border-top: 1px solid #333; padding-top: 8px;">
+        বিম্ব: <span id="type" style="color: #00ffcc">বাস্তব</span> | v: <span id="v-val">0</span>
+    </div>
+</div>
+
+<script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera.position.set(0, 10, 25);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    const loader = new THREE.TextureLoader();
+
+    // ১. স্কাইবক্স
+    const skyUrl = 'skybox.jpg';
+    loader.load(skyUrl, (texture) => {
+        texture.mapping = THREE.EquirectangularReflectionMapping;
+        scene.background = texture;
+        scene.environment = texture;
+        scene.backgroundIntensity = 0.4;
+    });
+
+    // ২. ঘাস টেক্সচার (Grass Texture)
+    const grassUrl = 'grass.jpg';
+    const grassTex = loader.load('grass.jpg');
+    grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping;
+    grassTex.repeat.set(12, 10); 
+
+    const table = new THREE.Mesh(
+        new THREE.PlaneGeometry(120, 100),
+        new THREE.MeshStandardMaterial({ 
+            map: grassTex, 
+            roughness: 0.5, 
+            metalness: 0.0 
+        })
+    );
+    table.rotation.x = -Math.PI / 2;
+    table.position.y = -6.1;
+    scene.add(table);
+
+    // ৩. বড় টেক্সট লেবেল ফাংশন
+    function createLabel(text, color = '#0a0a0a', fontSize = 70) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512; canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = color; ctx.font = `bold ${fontSize}px Arial`; ctx.textAlign = 'center';
+        ctx.fillText(text, 256, 128);
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
+        sprite.scale.set(6, 3, 1);
+        return sprite;
+    }
+
+    function createDistanceCanvas(text, color) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256; canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = color; ctx.font = 'bold 50px Arial'; ctx.textAlign = 'center';
+        ctx.fillText(text, 128, 80);
+        return canvas;
+    }
+
+    // ৪. সাপোর্ট স্ট্যান্ড
+    function createSupport(height) {
+        const group = new THREE.Group();
+        const base = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.25, 2.2), new THREE.MeshStandardMaterial({color: 0x000}));
+        base.position.y = -6.1;
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, height), new THREE.MeshStandardMaterial({color: 0x999, metalness: 0.8}));
+        pole.position.y = -6.1 + height/2;
+        group.add(base, pole);
+        return group;
+    }
+
+    // ৫. লেন্স, অবজেক্ট, স্ক্রিন সেটআপ
+    const lensGroup = new THREE.Group();
+const lensMaterial = new THREE.MeshPhysicalMaterial({
+    transmission: 1,          // glass effect
+    thickness: 2,
+    roughness: 0,            // smooth surface (important for reflection)
+    metalness: 0,
+    ior: 1.5,                // glass refractive index
+    reflectivity: 1,         // reflection power
+    clearcoat: 1,            // shiny layer
+    clearcoatRoughness: 0,
+    envMapIntensity: 1.5,    // reflection brightness
+    transparent: true,
+    opacity: 0.9
+});
+
+const lens = new THREE.Mesh(
+    new THREE.SphereGeometry(3.5, 64, 64),
+    lensMaterial
+);
+    
+    
+    lens.scale.set(1, 1, 0.15); lens.rotation.y = Math.PI/2;
+    lensGroup.add(lens, createSupport(6.1));
+    const lLabel = createLabel('LENS', '#00ffcc', 80); lLabel.position.y = 5.5; lensGroup.add(lLabel);
+    scene.add(lensGroup);
+
+    const objGroup = new THREE.Group();
+    const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 2), new THREE.MeshStandardMaterial({color: 0xff9933}));
+    candle.position.y = 1;
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.6, 32), new THREE.MeshBasicMaterial({color: 0xffff80}));
+    flame.position.y = 2.3;
+    objGroup.add(candle, flame, createSupport(6.1));
+    const oLabel = createLabel('OBJECT', '#ffffff', 80); oLabel.position.y = 5.5; objGroup.add(oLabel);
+    scene.add(objGroup);
+
+    const screenGroup = new THREE.Group();
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), new THREE.MeshStandardMaterial({color: 0xf5ecec, side: 2}));
+    screen.rotation.y = Math.PI/2;
+    screenGroup.add(screen, createSupport(6.1));
+    const sLabel = createLabel('SCREEN', '#ffffff', 80); sLabel.position.y = 6; screenGroup.add(sLabel);
+    scene.add(screenGroup);
+
+    const imageGroup = new THREE.Group();
+    const iFlame = flame.clone(); iFlame.material = new THREE.MeshBasicMaterial({color: 0x00ffcc, transparent: true, opacity: 0.8});
+    imageGroup.add(candle.clone(), iFlame);
+    scene.add(imageGroup);
+
+    // ৬. বড় ফোকাস লেবেল (F, 2F)
+    const f1L = createLabel('F', '#0a0a0a', 130); f1L.scale.set(3.5, 1.75, 1); scene.add(f1L);
+    const f2L = f1L.clone(); scene.add(f2L);
+    const c1L = createLabel('2F', '#0a0a0a', 130); c1L.scale.set(3.5, 1.75, 1); scene.add(c1L);
+    const c2L = c1L.clone(); scene.add(c2L);
+
+    // ৭. u এবং v দূরত্ব লেবেল
+    const uDistLabel = createLabel('u = 0', '#ffffff', 60); uDistLabel.scale.set(4, 2, 1); scene.add(uDistLabel);
+    const vDistLabel = createLabel('v = 0', '#00ffcc', 60); vDistLabel.scale.set(4, 2, 1); scene.add(vDistLabel);
+
+    const axis = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 100), new THREE.MeshBasicMaterial({color: 0x555}));
+    axis.rotation.z = Math.PI/2;
+    scene.add(axis);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const pLight = new THREE.PointLight(0xffffff, 200); pLight.position.set(5, 15, 10); scene.add(pLight);
+
+    let rays = new THREE.Group(); scene.add(rays);
+
+    function update() {
+        const u = parseFloat(document.getElementById('u-slider').value);
+        const f = parseFloat(document.getElementById('f-slider').value);
+        const v = (f * u) / (f + u);
+        const m = v / u;
+
+        document.getElementById('u-val').innerText = u.toFixed(1);
+        document.getElementById('f-val').innerText = f.toFixed(1);
+        document.getElementById('v-val').innerText = v.toFixed(2);
+
+        objGroup.position.x = u;
+        f1L.position.set(-f, 1.8, 0); f2L.position.set(f, 1.8, 0);
+        c1L.position.set(-2*f, 1.8, 0); c2L.position.set(2*f, 1.8, 0);
+
+        uDistLabel.position.set(u/2, -1.8, 0);
+        uDistLabel.material.map = new THREE.CanvasTexture(createDistanceCanvas(`u = ${Math.abs(u).toFixed(1)}`, '#ffffff'));
+        
+        vDistLabel.position.set(v/2, -1.8, 0);
+        vDistLabel.material.map = new THREE.CanvasTexture(createDistanceCanvas(`v = ${Math.abs(v).toFixed(1)}`, '#00ffcc'));
+
+        if (u < -f) {
+            document.getElementById('type').innerText = "বাস্তব";
+            screenGroup.visible = true; screenGroup.position.x = v;
+            imageGroup.position.set(v, 0, 0); imageGroup.scale.set(1, m, 1);
+            vDistLabel.visible = true;
+        } else {
+            document.getElementById('type').innerText = "অসদ";
+            screenGroup.visible = false;
+            imageGroup.position.set(v, 0, 0); imageGroup.scale.set(1, Math.abs(m), 1);
+            vDistLabel.visible = true;
+        }
+
+        scene.remove(rays); rays = new THREE.Group();
+        const start = new THREE.Vector3(u, 2.3, 0); const end = new THREE.Vector3(v, 2.3 * m, 0);
+        const r1 = new THREE.BufferGeometry().setFromPoints([start, new THREE.Vector3(0, 2.3, 0), end]);
+        const r2 = new THREE.BufferGeometry().setFromPoints([start, new THREE.Vector3(0, 0, 0), end]);
+        rays.add(new THREE.Line(r1, new THREE.LineBasicMaterial({color: 0xff3333})));
+        rays.add(new THREE.Line(r2, new THREE.LineBasicMaterial({color: 0xffff00})));
+        scene.add(rays);
+    }
+
+    document.getElementById('u-slider').oninput = update;
+    document.getElementById('f-slider').oninput = update;
+    function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
+    update(); animate();
+</script>
+</body>
+</html>
