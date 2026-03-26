@@ -2,33 +2,47 @@
 <html lang="bn">
 <head>
     <meta charset="UTF-8">
-    <title>Optical Lab</title>
+    <title>3D Optical Lab - Concave & Convex Pro</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         #controls {
             position: absolute; top: 20px; left: 20px;
-            background: rgba(10, 10, 15, 0.85); padding: 18px;
-            border-radius: 12px; border: 1px solid #00ffcc; color: white; width: 260px;
+            background: rgba(10, 10, 15, 0.9); padding: 18px;
+            border-radius: 12px; border: 1px solid #00ffcc; color: white; width: 280px;
             z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.6);
         }
-        input[type=range] { width: 100%; accent-color: #00ffcc; cursor: pointer; }
+        select, input[type=range] { width: 100%; accent-color: #00ffcc; cursor: pointer; margin-top: 5px; }
+        select { background: #222; color: #fff; border: 1px solid #444; padding: 6px; border-radius: 5px; margin-bottom: 10px; }
         .val { float: right; color: #00ffcc; font-weight: bold; }
+        label { font-size: 13px; display: block; margin-top: 8px; color: #aaa; }
+        h3 { margin: 0; font-size: 16px; color: #00ffcc; text-align: center; }
     </style>
 </head>
 <body>
 
 <div id="controls">
-    <h3 style="margin:0 0 10px 0; font-size: 16px; color: #00ffcc;">অপটিক্যাল ল্যাব ৩ডি</h3>
-    <hr style="border: 0.5px solid #333; margin: 10px 0;">
-    <div>
-        <label>বস্তুর দূরত্ব (u): <span id="u-val" class="val">-8.0</span></label>
-        <input type="range" id="u-slider" min="-18" max="-1" step="0.1" value="-8">
-    </div>
-    <div style="margin-bottom:12px;">
-        <label>ফোকাস দূরত্ব (f): <span id="f-val" class="val">4.0</span></label>
-        <input type="range" id="f-slider" min="2" max="8" step="0.1" value="4">
-    </div>
-    <div style="font-size: 13px; color: #bbb; border-top: 1px solid #333; padding-top: 8px;">
+    <h3>অপটিক্যাল ল্যাব ৩ডি</h3>
+    <hr style="border: 0.5px solid #333; margin: 12px 0;">
+    
+    <label>লেন্সের ধরন (Lens Type):</label>
+    <select id="lens-type">
+        <option value="convex">উত্তল লেন্স (Convex)</option>
+        <option value="concave">অবতল লেন্স (Concave)</option>
+    </select>
+
+    <label>বস্তুর অবস্থান (Alignment):</label>
+    <select id="align-mode">
+        <option value="base">পাদবিন্দু অক্ষের ওপর (Base)</option>
+        <option value="center">মধ্যবিন্দু অক্ষের ওপর (Mid-point)</option>
+    </select>
+
+    <label>বস্তুর দূরত্ব (u): <span id="u-val" class="val">8.0</span></label>
+    <input type="range" id="u-slider" min="1" max="18" step="0.1" value="8">
+
+    <label>ফোকাস দূরত্ব (f): <span id="f-val" class="val">4.0</span></label>
+    <input type="range" id="f-slider" min="2" max="8" step="0.1" value="4">
+
+    <div style="font-size: 12px; color: #bbb; border-top: 1px solid #333; padding-top: 8px; margin-top: 10px;">
         বিম্ব: <span id="type" style="color: #00ffcc">বাস্তব</span> | v: <span id="v-val">0</span>
     </div>
 </div>
@@ -61,175 +75,178 @@
 
     const loader = new THREE.TextureLoader();
 
-    // ১. স্কাইবক্স
-    const skyUrl = 'skybox.jpg';
-    loader.load(skyUrl, (texture) => {
-        texture.mapping = THREE.EquirectangularReflectionMapping;
-        scene.background = texture;
-        scene.environment = texture;
-        scene.backgroundIntensity = 0.4;
+    // ১. এনভায়রনমেন্ট
+    loader.load('skybox.jpg', (tex) => {
+        tex.mapping = THREE.EquirectangularReflectionMapping;
+        scene.background = tex; scene.environment = tex; scene.backgroundIntensity = 0.5;
     });
 
-    // ২. ঘাস টেক্সচার (Grass Texture)
-    const grassUrl = 'grass.jpg';
     const grassTex = loader.load('grass.jpg');
-    grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping;
-    grassTex.repeat.set(12, 10); 
+    grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping; grassTex.repeat.set(12, 10);
+    const table = new THREE.Mesh(new THREE.PlaneGeometry(120, 100), new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1 }));
+    table.rotation.x = -Math.PI / 2; table.position.y = -6.1; scene.add(table);
 
-    const table = new THREE.Mesh(
-        new THREE.PlaneGeometry(120, 100),
-        new THREE.MeshStandardMaterial({ 
-            map: grassTex, 
-            roughness: 0.5, 
-            metalness: 0.0 
-        })
-    );
-    table.rotation.x = -Math.PI / 2;
-    table.position.y = -6.1;
-    scene.add(table);
-
-    // ৩. বড় টেক্সট লেবেল ফাংশন
-    function createLabel(text, color = '#0a0a0a', fontSize = 70) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 512; canvas.height = 256;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = color; ctx.font = `bold ${fontSize}px Arial`; ctx.textAlign = 'center';
-        ctx.fillText(text, 256, 128);
-        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
-        sprite.scale.set(6, 3, 1);
-        return sprite;
-    }
-
-    function createDistanceCanvas(text, color) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 256; canvas.height = 128;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = color; ctx.font = 'bold 50px Arial'; ctx.textAlign = 'center';
-        ctx.fillText(text, 128, 80);
-        return canvas;
-    }
-
-    // ৪. সাপোর্ট স্ট্যান্ড
-    function createSupport(height) {
-        const group = new THREE.Group();
+    // ২. সাপোর্ট ও লেবেল
+    function createSupport() {
+        const g = new THREE.Group();
         const base = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.25, 2.2), new THREE.MeshStandardMaterial({color: 0x000}));
         base.position.y = -6.1;
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, height), new THREE.MeshStandardMaterial({color: 0x999, metalness: 0.8}));
-        pole.position.y = -6.1 + height/2;
-        group.add(base, pole);
-        return group;
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 6.1), new THREE.MeshStandardMaterial({color: 0x999, metalness: 0.8}));
+        pole.position.y = -6.1 + 6.1/2;
+        g.add(base, pole); return g;
     }
 
-    // ৫. লেন্স, অবজেক্ট, স্ক্রিন সেটআপ
+    function createLabel(text, color = '#ffffff', size = 70) {
+        const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = color; ctx.font = `bold ${size}px Arial`; ctx.textAlign = 'center';
+        ctx.fillText(text, 256, 128);
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
+        sprite.scale.set(6, 3, 1); return sprite;
+    }
+
+    // ৩. অবজেক্টস
     const lensGroup = new THREE.Group();
-const lensMaterial = new THREE.MeshPhysicalMaterial({
-    transmission: 1,          // glass effect
-    thickness: 2,
-    roughness: 0,            // smooth surface (important for reflection)
-    metalness: 0,
-    ior: 1.5,                // glass refractive index
-    reflectivity: 1,         // reflection power
-    clearcoat: 1,            // shiny layer
-    clearcoatRoughness: 0,
-    envMapIntensity: 1.5,    // reflection brightness
+let lensMaterial = new THREE.MeshPhysicalMaterial({
+    transmission: 1,        // glass effect
+    thickness: 1.5,
     transparent: true,
-    opacity: 0.9
+    opacity: 0.6,
+
+    metalness: 0.0,         // glass → metal না
+    roughness: 0.05,        // কম হলে reflection sharp হবে
+    reflectivity: 1.0,      // reflection strength
+    envMapIntensity: 1.5,   // environment reflection boost
+
+    clearcoat: 1.0,         // extra glossy layer
+    clearcoatRoughness: 0.05
 });
 
-const lens = new THREE.Mesh(
+let lensMesh = new THREE.Mesh(
     new THREE.SphereGeometry(3.5, 64, 64),
     lensMaterial
 );
     
     
-    lens.scale.set(1, 1, 0.15); lens.rotation.y = Math.PI/2;
-    lensGroup.add(lens, createSupport(6.1));
-    const lLabel = createLabel('LENS', '#00ffcc', 80); lLabel.position.y = 5.5; lensGroup.add(lLabel);
+    
+    
+    lensMesh.scale.set(1, 1, 0.15); lensMesh.rotation.y = Math.PI/2;
+    lensGroup.add(lensMesh, createSupport());
+    lensGroup.add(createLabel('লেন্স', '#0205aa', 80).translateY(5.5));
     scene.add(lensGroup);
 
     const objGroup = new THREE.Group();
-    const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 2), new THREE.MeshStandardMaterial({color: 0xff9933}));
-    candle.position.y = 1;
-    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.6, 32), new THREE.MeshBasicMaterial({color: 0xffff80}));
-    flame.position.y = 2.3;
-    objGroup.add(candle, flame, createSupport(6.1));
-    const oLabel = createLabel('OBJECT', '#ffffff', 80); oLabel.position.y = 5.5; objGroup.add(oLabel);
+    const candleMesh = new THREE.Group();
+    candleMesh.add(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 3), new THREE.MeshStandardMaterial({color: 0x4d1427})));
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.6, 32), new THREE.MeshBasicMaterial({color: 0xd68e2f}));
+    flame.position.y = 1.5; candleMesh.add(flame);
+    objGroup.add(candleMesh, createSupport());
+    objGroup.add(createLabel('বস্তু', '#0205aa', 80).translateY(5.5));
     scene.add(objGroup);
 
     const screenGroup = new THREE.Group();
-    const screen = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), new THREE.MeshStandardMaterial({color: 0xf5ecec, side: 2}));
-    screen.rotation.y = Math.PI/2;
-    screenGroup.add(screen, createSupport(6.1));
-    const sLabel = createLabel('SCREEN', '#ffffff', 80); sLabel.position.y = 6; screenGroup.add(sLabel);
+    screenGroup.add(new THREE.Mesh(new THREE.PlaneGeometry(8, 8), new THREE.MeshStandardMaterial({color: 0xffffff, side: 2})).rotateY(Math.PI/2), createSupport());
     scene.add(screenGroup);
 
     const imageGroup = new THREE.Group();
-    const iFlame = flame.clone(); iFlame.material = new THREE.MeshBasicMaterial({color: 0x00ffcc, transparent: true, opacity: 0.8});
-    imageGroup.add(candle.clone(), iFlame);
-    scene.add(imageGroup);
+    const iCandle = candleMesh.clone();
+    iCandle.children[1].material = new THREE.MeshBasicMaterial({color: 0x00ffcc, transparent: true, opacity: 0.8});
+    imageGroup.add(iCandle); scene.add(imageGroup);
 
-    // ৬. বড় ফোকাস লেবেল (F, 2F)
-    const f1L = createLabel('F', '#0a0a0a', 130); f1L.scale.set(3.5, 1.75, 1); scene.add(f1L);
+    // ৪. ডাইনামিক দূরত্ব লেবেল
+    const uDistLabel = createLabel('u = 0', '#030303', 60); uDistLabel.scale.set(4, 2, 1); scene.add(uDistLabel);
+    const vDistLabel = createLabel('v = 0', '#131415', 60); vDistLabel.scale.set(4, 2, 1); scene.add(vDistLabel);
+
+    const f1L = createLabel('F', '#010503', 120); f1L.scale.set(3, 1.5, 1); scene.add(f1L);
     const f2L = f1L.clone(); scene.add(f2L);
-    const c1L = createLabel('2F', '#0a0a0a', 130); c1L.scale.set(3.5, 1.75, 1); scene.add(c1L);
-    const c2L = c1L.clone(); scene.add(c2L);
-
-    // ৭. u এবং v দূরত্ব লেবেল
-    const uDistLabel = createLabel('u = 0', '#ffffff', 60); uDistLabel.scale.set(4, 2, 1); scene.add(uDistLabel);
-    const vDistLabel = createLabel('v = 0', '#00ffcc', 60); vDistLabel.scale.set(4, 2, 1); scene.add(vDistLabel);
-
     const axis = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 100), new THREE.MeshBasicMaterial({color: 0x555}));
-    axis.rotation.z = Math.PI/2;
-    scene.add(axis);
+    axis.rotation.z = Math.PI/2; scene.add(axis);
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const pLight = new THREE.PointLight(0xffffff, 200); pLight.position.set(5, 15, 10); scene.add(pLight);
-
     let rays = new THREE.Group(); scene.add(rays);
 
     function update() {
-        const u = parseFloat(document.getElementById('u-slider').value);
-        const f = parseFloat(document.getElementById('f-slider').value);
-        const v = (f * u) / (f + u);
-        const m = v / u;
+        const uPos = -parseFloat(document.getElementById('u-slider').value); // স্লাইডার ভ্যালু পজিটিভ, কিন্তু পজিশন নেগেটিভ
+        let f = parseFloat(document.getElementById('f-slider').value);
+        const lensType = document.getElementById('lens-type').value;
+        const alignMode = document.getElementById('align-mode').value;
 
-        document.getElementById('u-val').innerText = u.toFixed(1);
-        document.getElementById('f-val').innerText = f.toFixed(1);
-        document.getElementById('v-val').innerText = v.toFixed(2);
+        if (lensType === 'concave') { f = -f; lensMesh.scale.set(1.5, 1.5, -0.1); } 
+        else { lensMesh.scale.set(1, 1, 0.15); }
 
-        objGroup.position.x = u;
-        f1L.position.set(-f, 1.8, 0); f2L.position.set(f, 1.8, 0);
-        c1L.position.set(-2*f, 1.8, 0); c2L.position.set(2*f, 1.8, 0);
+        const v = (f * uPos) / (f + uPos);
+        const m = v / uPos;
 
-        uDistLabel.position.set(u/2, -1.8, 0);
-        uDistLabel.material.map = new THREE.CanvasTexture(createDistanceCanvas(`u = ${Math.abs(u).toFixed(1)}`, '#ffffff'));
-        
-        vDistLabel.position.set(v/2, -1.8, 0);
-        vDistLabel.material.map = new THREE.CanvasTexture(createDistanceCanvas(`v = ${Math.abs(v).toFixed(1)}`, '#00ffcc'));
+        // UI আপডেট (ধনাত্মক মান)
+        document.getElementById('u-val').innerText = Math.abs(uPos).toFixed(1);
+        document.getElementById('f-val').innerText = Math.abs(f).toFixed(1);
+        document.getElementById('v-val').innerText = Math.abs(v).toFixed(2);
 
-        if (u < -f) {
+        let objYOffset = (alignMode === 'base') ? 1.5 : 0; 
+        candleMesh.position.y = objYOffset;
+        objGroup.position.x = uPos;
+
+        f1L.position.set(-Math.abs(f), 1.8, 0); f2L.position.set(Math.abs(f), 1.8, 0);
+
+        // দূরত্ব টেক্সট আপডেট
+        uDistLabel.position.set(uPos/2, -1.8, 0);
+        uDistLabel.material.map = createTextTexture(`u = ${Math.abs(uPos).toFixed(1)}`, '#0502aa');
+        vDistLabel.position.set(v/2, -1.8, 1);
+        vDistLabel.material.map = createTextTexture(`v = ${Math.abs(v).toFixed(1)}`, '#0502aa');
+
+        if (lensType === 'convex' && uPos < -Math.abs(f)) {
             document.getElementById('type').innerText = "বাস্তব";
             screenGroup.visible = true; screenGroup.position.x = v;
-            imageGroup.position.set(v, 0, 0); imageGroup.scale.set(1, m, 1);
-            vDistLabel.visible = true;
+            imageGroup.position.set(v, objYOffset * m, 0); imageGroup.scale.set(1, m, 1);
         } else {
             document.getElementById('type').innerText = "অসদ";
             screenGroup.visible = false;
-            imageGroup.position.set(v, 0, 0); imageGroup.scale.set(1, Math.abs(m), 1);
-            vDistLabel.visible = true;
+            imageGroup.position.set(v, objYOffset * Math.abs(m), 0); imageGroup.scale.set(1, Math.abs(m), 1);
         }
 
+        // রশ্মি আপডেট
         scene.remove(rays); rays = new THREE.Group();
-        const start = new THREE.Vector3(u, 2.3, 0); const end = new THREE.Vector3(v, 2.3 * m, 0);
-        const r1 = new THREE.BufferGeometry().setFromPoints([start, new THREE.Vector3(0, 2.3, 0), end]);
-        const r2 = new THREE.BufferGeometry().setFromPoints([start, new THREE.Vector3(0, 0, 0), end]);
-        rays.add(new THREE.Line(r1, new THREE.LineBasicMaterial({color: 0xff3333})));
-        rays.add(new THREE.Line(r2, new THREE.LineBasicMaterial({color: 0xffff00})));
+        const tipY = objYOffset + 1.5;
+        const imgTipY = tipY * (v/uPos);
+        const start = new THREE.Vector3(uPos, tipY, 0);
+
+        // সমান্তরাল রশ্মি
+        const r1P = [start, new THREE.Vector3(0, tipY, 0)];
+        if (lensType === 'convex') r1P.push(new THREE.Vector3(v, imgTipY, 0));
+        else {
+            r1P.push(new THREE.Vector3(15, tipY + (15/Math.abs(f))*tipY, 0));
+            const virt = [new THREE.Vector3(0, tipY, 0), new THREE.Vector3(-Math.abs(f), 0, 0)];
+            rays.add(createDashedLine(virt, 0xff3333));
+        }
+
+        // কেন্দ্রগামী রশ্মি
+        const r2P = [start, new THREE.Vector3(0,0,0), new THREE.Vector3(v, imgTipY, 0)];
+        if (v < 0) r2P.push(new THREE.Vector3(15, -15*(tipY/Math.abs(uPos)), 0));
+
+        rays.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(r1P), new THREE.LineBasicMaterial({color: 0xff3333})));
+        rays.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(r2P), new THREE.LineBasicMaterial({color: 0xffff00})));
         scene.add(rays);
+    }
+
+    function createTextTexture(text, color) {
+        const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = color; ctx.font = 'bold 50px Arial'; ctx.textAlign = 'center';
+        ctx.fillText(text, 128, 80);
+        return new THREE.CanvasTexture(canvas);
+    }
+
+    function createDashedLine(points, color) {
+        const geo = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(geo, new THREE.LineDashedMaterial({color, dashSize: 0.5, gapSize: 0.3}));
+        line.computeLineDistances(); return line;
     }
 
     document.getElementById('u-slider').oninput = update;
     document.getElementById('f-slider').oninput = update;
+    document.getElementById('lens-type').onchange = update;
+    document.getElementById('align-mode').onchange = update;
+    
     function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
     update(); animate();
 </script>
