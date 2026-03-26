@@ -2,7 +2,7 @@
 <html lang="bn">
 <head>
     <meta charset="UTF-8">
-    <title>3D Optical Lab - Concave & Convex Pro</title>
+    <title>Optical Lab - Perfect Lens Alignment</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; }
         #controls {
@@ -62,7 +62,7 @@
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 2000);
-    camera.position.set(0, 10, 25);
+    camera.position.set(0, 8, 25);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -75,10 +75,10 @@
 
     const loader = new THREE.TextureLoader();
 
-    // ১. এনভায়রনমেন্ট
+    // এনভায়রনমেন্ট
     loader.load('skybox.jpg', (tex) => {
         tex.mapping = THREE.EquirectangularReflectionMapping;
-        scene.background = tex; scene.environment = tex; scene.backgroundIntensity = 0.5;
+        scene.background = tex; scene.environment = tex; scene.backgroundIntensity = 0.3;
     });
 
     const grassTex = loader.load('grass.jpg');
@@ -86,7 +86,85 @@
     const table = new THREE.Mesh(new THREE.PlaneGeometry(120, 100), new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1 }));
     table.rotation.x = -Math.PI / 2; table.position.y = -6.1; scene.add(table);
 
-    // ২. সাপোর্ট ও লেবেল
+
+
+    function createConcaveGeometry() {
+        const R = 8.0, aperture = 2.5, segments = 40;
+        const positions = [], indices = [];
+        const sphereZ = (r) => Math.sqrt(R * R - r * r);
+    
+        const zShift = sphereZ(0) + 0.2; 
+
+        for (let i = 0; i <= segments; i++) {
+            let r = (i / segments) * aperture;
+            for (let j = 0; j <= segments; j++) {
+                let theta = (j / segments) * Math.PI * 2;
+                let x = r * Math.cos(theta), y = r * Math.sin(theta);
+                
+                let z = zShift - sphereZ(r); 
+                positions.push(x, y, z, x, y, -z);
+            }
+        }
+        
+        // Face indices logic
+        for (let i = 0; i < segments; i++) {
+            for (let j = 0; j < segments; j++) {
+                let a = i * (segments + 1) * 2 + j * 2, b = a + (segments + 1) * 2;
+                indices.push(a, b, a + 2, b, b + 2, a + 2); // front
+                indices.push(a + 1, a + 3, b + 1, b + 1, a + 3, b + 3); // back
+            }
+        }
+        
+        // Edge/Side logic
+        let start = positions.length / 3;
+        for (let j = 0; j <= segments; j++) {
+            let theta = (j / segments) * Math.PI * 2;
+            let x = aperture * Math.cos(theta), y = aperture * Math.sin(theta);
+            let z = zShift - sphereZ(aperture);
+            positions.push(x, y, z, x, y, -z);
+        }
+        for (let j = 0; j < segments; j++) {
+            let a = start + j * 2, b = a + 2;
+            indices.push(a, b, a + 1, b, b + 1, a + 1);
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geo.setIndex(indices); 
+        geo.computeVertexNormals();
+        return geo;
+    }
+
+    function createConvexGeometry() {
+        const geo = new THREE.SphereGeometry(3, 64, 64);
+        geo.scale(1, 1, 0.3);
+        return geo;
+    }
+
+    const lensGroup = new THREE.Group();
+    const lensMat = new THREE.MeshPhysicalMaterial({
+    transmission: 1,       // glass effect
+    thickness: 1.5,
+    transparent: true,
+    opacity: 0.6,
+    ior: 1.5,
+
+    metalness: 0.0,        // glass → metal না
+    roughness: 0.05,       // কম হলে reflection sharp হবে
+    reflectivity: 1.0,     // 🔥 reflection বাড়ানোর জন্য
+
+    clearcoat: 1.0,        // extra glossy layer
+    clearcoatRoughness: 0.05,
+
+    envMapIntensity: 1.5,  // 🔥 environment reflection strong করবে
+
+    side: THREE.DoubleSide
+    });
+
+    let lensMesh = new THREE.Mesh(createConvexGeometry(), lensMat);
+    lensMesh.rotation.y = Math.PI/2;
+    lensGroup.add(lensMesh);
+    
     function createSupport() {
         const g = new THREE.Group();
         const base = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.25, 2.2), new THREE.MeshStandardMaterial({color: 0x000}));
@@ -95,7 +173,30 @@
         pole.position.y = -6.1 + 6.1/2;
         g.add(base, pole); return g;
     }
+    lensGroup.add(createSupport());
+    lensGroup.add(createLabel('লেন্স', '#0205aa', 80).translateY(5.5));
+    scene.add(lensGroup);
 
+    // ৩. অবজেক্ট ও বিম্ব সেটআপ
+    const objGroup = new THREE.Group();
+    const candleMesh = new THREE.Group();
+    candleMesh.add(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 3), new THREE.MeshStandardMaterial({color: 0xffccaa})));
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.6, 32), new THREE.MeshBasicMaterial({color: 0xffaa00}));
+    flame.position.y = 1.5; candleMesh.add(flame);
+    objGroup.add(candleMesh, createSupport());
+     objGroup.add(createLabel('বস্তু', '#0205aa', 80).translateY(5.5));
+    scene.add(objGroup);
+
+    const imageGroup = new THREE.Group();
+    const iCandle = candleMesh.clone();
+    iCandle.children[1].material = new THREE.MeshBasicMaterial({color: 0x00ffcc, transparent: true, opacity: 0.8});
+    imageGroup.add(iCandle); scene.add(imageGroup);
+
+    const screenGroup = new THREE.Group();
+    screenGroup.add(new THREE.Mesh(new THREE.PlaneGeometry(8, 8), new THREE.MeshStandardMaterial({color: 0xffffff, side: 2})).rotateY(Math.PI/2), createSupport());
+    scene.add(screenGroup);
+
+    // ৪. লেবেল ও অক্ষ
     function createLabel(text, color = '#ffffff', size = 70) {
         const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 256;
         const ctx = canvas.getContext('2d');
@@ -105,80 +206,39 @@
         sprite.scale.set(6, 3, 1); return sprite;
     }
 
-    // ৩. অবজেক্টস
-    const lensGroup = new THREE.Group();
-let lensMaterial = new THREE.MeshPhysicalMaterial({
-    transmission: 1,        // glass effect
-    thickness: 1.5,
-    transparent: true,
-    opacity: 0.6,
-
-    metalness: 0.0,         // glass → metal না
-    roughness: 0.05,        // কম হলে reflection sharp হবে
-    reflectivity: 1.0,      // reflection strength
-    envMapIntensity: 1.5,   // environment reflection boost
-
-    clearcoat: 1.0,         // extra glossy layer
-    clearcoatRoughness: 0.05
-});
-
-let lensMesh = new THREE.Mesh(
-    new THREE.SphereGeometry(3.5, 64, 64),
-    lensMaterial
-);
-    
-    
-    
-    
-    lensMesh.scale.set(1, 1, 0.15); lensMesh.rotation.y = Math.PI/2;
-    lensGroup.add(lensMesh, createSupport());
-    lensGroup.add(createLabel('লেন্স', '#0205aa', 80).translateY(5.5));
-    scene.add(lensGroup);
-
-    const objGroup = new THREE.Group();
-    const candleMesh = new THREE.Group();
-    candleMesh.add(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 3), new THREE.MeshStandardMaterial({color: 0x4d1427})));
-    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.6, 32), new THREE.MeshBasicMaterial({color: 0xd68e2f}));
-    flame.position.y = 1.5; candleMesh.add(flame);
-    objGroup.add(candleMesh, createSupport());
-    objGroup.add(createLabel('বস্তু', '#0205aa', 80).translateY(5.5));
-    scene.add(objGroup);
-
-    const screenGroup = new THREE.Group();
-    screenGroup.add(new THREE.Mesh(new THREE.PlaneGeometry(8, 8), new THREE.MeshStandardMaterial({color: 0xffffff, side: 2})).rotateY(Math.PI/2), createSupport());
-    scene.add(screenGroup);
-
-    const imageGroup = new THREE.Group();
-    const iCandle = candleMesh.clone();
-    iCandle.children[1].material = new THREE.MeshBasicMaterial({color: 0x00ffcc, transparent: true, opacity: 0.8});
-    imageGroup.add(iCandle); scene.add(imageGroup);
-
-    // ৪. ডাইনামিক দূরত্ব লেবেল
-    const uDistLabel = createLabel('u = 0', '#030303', 60); uDistLabel.scale.set(4, 2, 1); scene.add(uDistLabel);
-    const vDistLabel = createLabel('v = 0', '#131415', 60); vDistLabel.scale.set(4, 2, 1); scene.add(vDistLabel);
-
-    const f1L = createLabel('F', '#010503', 120); f1L.scale.set(3, 1.5, 1); scene.add(f1L);
+    const uDistLabel = createLabel('u = 0', '#ffffff', 60); scene.add(uDistLabel);
+    const vDistLabel = createLabel('v = 0', '#00ffcc', 60); scene.add(vDistLabel);
+    const f1L = createLabel('F', '#00ffcc', 120); scene.add(f1L);
     const f2L = f1L.clone(); scene.add(f2L);
+
     const axis = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 100), new THREE.MeshBasicMaterial({color: 0x555}));
     axis.rotation.z = Math.PI/2; scene.add(axis);
-
     scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+
     let rays = new THREE.Group(); scene.add(rays);
 
     function update() {
-        const uPos = -parseFloat(document.getElementById('u-slider').value); // স্লাইডার ভ্যালু পজিটিভ, কিন্তু পজিশন নেগেটিভ
+        const uVal = parseFloat(document.getElementById('u-slider').value);
+        const uPos = -uVal;
         let f = parseFloat(document.getElementById('f-slider').value);
         const lensType = document.getElementById('lens-type').value;
         const alignMode = document.getElementById('align-mode').value;
 
-        if (lensType === 'concave') { f = -f; lensMesh.scale.set(1.5, 1.5, -0.1); } 
-        else { lensMesh.scale.set(1, 1, 0.15); }
+        // ৫. এলাইনমেন্ট ফিক্স (Rotate Concave correctly)
+        lensMesh.geometry.dispose();
+        if (lensType === 'concave') {
+            lensMesh.geometry = createConcaveGeometry();
+            lensMesh.rotation.set(0, Math.PI/2, 0); // Correctly aligns the face
+            f = -f;
+        } else {
+            lensMesh.geometry = createConvexGeometry();
+            lensMesh.rotation.set(0, Math.PI/2, 0);
+        }
 
         const v = (f * uPos) / (f + uPos);
         const m = v / uPos;
 
-        // UI আপডেট (ধনাত্মক মান)
-        document.getElementById('u-val').innerText = Math.abs(uPos).toFixed(1);
+        document.getElementById('u-val').innerText = uVal.toFixed(1);
         document.getElementById('f-val').innerText = Math.abs(f).toFixed(1);
         document.getElementById('v-val').innerText = Math.abs(v).toFixed(2);
 
@@ -187,12 +247,10 @@ let lensMesh = new THREE.Mesh(
         objGroup.position.x = uPos;
 
         f1L.position.set(-Math.abs(f), 1.8, 0); f2L.position.set(Math.abs(f), 1.8, 0);
-
-        // দূরত্ব টেক্সট আপডেট
         uDistLabel.position.set(uPos/2, -1.8, 0);
-        uDistLabel.material.map = createTextTexture(`u = ${Math.abs(uPos).toFixed(1)}`, '#0502aa');
+        uDistLabel.material.map = createTextTexture(`u = ${uVal.toFixed(1)}`, '#ffffff');
         vDistLabel.position.set(v/2, -1.8, 1);
-        vDistLabel.material.map = createTextTexture(`v = ${Math.abs(v).toFixed(1)}`, '#0502aa');
+        vDistLabel.material.map = createTextTexture(`v = ${Math.abs(v).toFixed(1)}`, '#00ffcc');
 
         if (lensType === 'convex' && uPos < -Math.abs(f)) {
             document.getElementById('type').innerText = "বাস্তব";
@@ -204,23 +262,17 @@ let lensMesh = new THREE.Mesh(
             imageGroup.position.set(v, objYOffset * Math.abs(m), 0); imageGroup.scale.set(1, Math.abs(m), 1);
         }
 
-        // রশ্মি আপডেট
         scene.remove(rays); rays = new THREE.Group();
         const tipY = objYOffset + 1.5;
         const imgTipY = tipY * (v/uPos);
-        const start = new THREE.Vector3(uPos, tipY, 0);
-
-        // সমান্তরাল রশ্মি
-        const r1P = [start, new THREE.Vector3(0, tipY, 0)];
+        
+        const r1P = [new THREE.Vector3(uPos, tipY, 0), new THREE.Vector3(0, tipY, 0)];
         if (lensType === 'convex') r1P.push(new THREE.Vector3(v, imgTipY, 0));
         else {
             r1P.push(new THREE.Vector3(15, tipY + (15/Math.abs(f))*tipY, 0));
-            const virt = [new THREE.Vector3(0, tipY, 0), new THREE.Vector3(-Math.abs(f), 0, 0)];
-            rays.add(createDashedLine(virt, 0xff3333));
+            rays.add(createDashedLine([new THREE.Vector3(0, tipY, 0), new THREE.Vector3(-Math.abs(f), 0, 0)], 0xff3333));
         }
-
-        // কেন্দ্রগামী রশ্মি
-        const r2P = [start, new THREE.Vector3(0,0,0), new THREE.Vector3(v, imgTipY, 0)];
+        const r2P = [new THREE.Vector3(uPos, tipY, 0), new THREE.Vector3(0, 0, 0), new THREE.Vector3(v, imgTipY, 0)];
         if (v < 0) r2P.push(new THREE.Vector3(15, -15*(tipY/Math.abs(uPos)), 0));
 
         rays.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(r1P), new THREE.LineBasicMaterial({color: 0xff3333})));
@@ -246,7 +298,6 @@ let lensMesh = new THREE.Mesh(
     document.getElementById('f-slider').oninput = update;
     document.getElementById('lens-type').onchange = update;
     document.getElementById('align-mode').onchange = update;
-    
     function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
     update(); animate();
 </script>
